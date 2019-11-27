@@ -1,14 +1,11 @@
-const mongoose = require('mongoose')
-const {bookSchema} = require('./book')
 const Joi = require('joi')
+const mongoose = require('mongoose')
+const config = require('config')
+const jwt = require('jsonwebtoken')
 
 const userSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: true,
-    },
-    phonenumber: {
-        type: Number,
         required: true
     },
     email: {
@@ -16,20 +13,29 @@ const userSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
-    books: [bookSchema]
+    password: {
+        type: String,
+        required: true
+    },
+    isAdmin: {
+        type: Boolean
+    }
 })
+
+userSchema.methods.generateAuthToken = function() {
+    const token = jwt.sign({ _id: this._id, isAdmin: this.isAdmin }, config.get('jwtPrivateKey'))
+    return token;
+}
 
 const User = mongoose.model('User', userSchema)
 
-function validateUser(user) {
+function validateUser(users) {
     const schema = {
         name: Joi.string().required(),
-        phonenumber: Joi.number().required(),
         email: Joi.string().required(),
-        books: Joi.array().items(Joi.objectId())
+        password: Joi.string().required()
     }
-
-    return Joi.validate(user, schema)
+    return Joi.validate(users, schema)
 }
 
 module.exports.User = User;

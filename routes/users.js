@@ -1,10 +1,14 @@
+const { User, validateUser } = require('../models/user')
 const express = require('express')
 const router = express.Router()
-const { User, validateUser } = require('../models/user')
-const { Book } = require('../models/book')
+const _ = require('lodash')
+const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
+const config = require('config')
+const auth = require('../middleware/auth')
 
-router.get('/', async (req, res) => {
-    const user = await User.find().sort('name')
+router.get('/me', auth, async (req, res) => {
+    const user = await User.findById(req.user._id).select('-password')
     res.send(user)
 })
 
@@ -12,64 +16,21 @@ router.post('/', async (req, res) => {
     const {error} = validateUser(req.body)
     if (error) return res.status(400).send(error.details[0].message)
 
-    let user = new User({
-        name: req.body.name,
-        phonenumber: req.body.phonenumber,
-        email: req.body.email
+    let user = await User.findOne({email: req.body.email})
+    if (user) return res.status(400).send('User already registered')
+
+    user = new User({
+        ...req.body
     })
 
-    user = await user.save()
-    res.send(user)
-})
+    const salt = await bcrypt.genSalt(10)
+    user.password = await bcrypt.hash(user.password, salt)
 
-router.get('/:id', async (req, res) => {
-    const user = await User.findById(req.params.id)
-    if (!user) res.status(404).send('User not found')
-    res.send(user)
-})
-
-router.put('/:id', async (req, res) => {
-    const user = await User.findByIdAndUpdate(req.params.id, {
-        name: req.body.name,
-        phonenumber: req.body.phonenumber,
-        email: req.body.email
-    }, {new: true})
-
-    if (!user) return res.status(404).send('User not found')
-    res.send(user)
-})
-
-router.delete('/:id', async (req, res) => {
-    const user = User.findByIdAndRemove(req.params.id)
-    if (!user) return res.status(404).send('User not found')
-    res.send(user)
-})
-
-router.post('/:id/:book', async (req, res) => {
-    let user = await User.findById(req.params.id)
-    const book = await Book.findById(req.params.book)
-
-    let bookAdd = new Book({
-        _id: book.id,
-        name: book.name,
-        author: book.author,
-        price: book.price
-    })
-
-    user.books.push(bookAdd)
     user = await user.save()
 
-    res.send(user)
-})
-
-router.put('/:id/:book', async (req, res) => {
-    let book = await Book.findById(req.params.book)
-
-    let user = await User.findByIdAndUpdate(req.params.id, {
-        $pull: { books: { name: book.name} }
-    }, {new: true})
-
-    res.send(user)
+    const token = user.generateAuthToken()
+    // const token = jwt.sign({ _id: user._id }, config.get('jwtPrivateKey'))
+    res.header('x-auth-token', token).send(_.pick(user, ['_id', 'name', 'email']))
 })
 
 module.exports = router;
